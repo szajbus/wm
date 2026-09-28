@@ -62,18 +62,35 @@ list_commands() {
   done
 }
 
+# Prints "value:description" suggestions for the Nth argument of a command,
+# chosen by the argument's name; used by shell completions.
+list_candidates() {
+  local file=$PROMPTS_DIR/$1.md names
+  [ -f "$file" ] || return 0
+  read -r -a names <<< "$(meta "$file" args)"
+  [ "$2" -ge 1 ] && [ "$2" -le ${#names[@]} ] || return 0
+  local template='{{range .}}{{.number}}:{{.title}}{{"\n"}}{{end}}'
+  case ${names[$2-1]} in
+    PR) gh pr list --limit 100 --json number,title --template "$template" ;;
+    ISSUE) gh issue list --limit 100 --json number,title --template "$template" ;;
+  esac
+}
+
 completion() {
   case ${1:-} in
     bash) cat <<'EOF'
 _wm() {
   local cur=${COMP_WORDS[COMP_CWORD]} pos=1
   case ${COMP_WORDS[1]} in -n|--dry-run) pos=2 ;; esac
-  [ "$COMP_CWORD" -eq "$pos" ] || return
   local words
-  case $cur in
-    -*) words="-n --dry-run -h --help --completion" ;;
-    *) words=$(wm --commands 2>/dev/null | cut -d: -f1) ;;
-  esac
+  if [ "$COMP_CWORD" -eq "$pos" ]; then
+    case $cur in
+      -*) words="-n --dry-run -h --help --completion" ;;
+      *) words=$(wm --commands 2>/dev/null | cut -d: -f1) ;;
+    esac
+  elif [ "$COMP_CWORD" -gt "$pos" ]; then
+    words=$(wm --candidates "${COMP_WORDS[pos]}" $((COMP_CWORD - pos)) 2>/dev/null | cut -d: -f1)
+  fi
   COMPREPLY=($(compgen -W "$words" -- "$cur"))
 }
 complete -F _wm wm
@@ -81,14 +98,22 @@ EOF
     ;;
     zsh) cat <<'EOF'
 _wm() {
-  local -a commands
-  commands=(${(f)"$(wm --commands 2>/dev/null)"})
+  local -a commands candidates
+  local state
   _arguments \
     '(-n --dry-run)'{-n,--dry-run}'[print the command instead of running it]' \
     '(- *)'{-h,--help}'[list commands]' \
     '(- *)--completion[print shell completion script]:shell:(bash zsh)' \
-    '1:command:{_describe command commands}' \
-    '*:: : '
+    '1:command:->command' \
+    '*:: :->argument'
+  case $state in
+    command)
+      commands=(${(f)"$(wm --commands 2>/dev/null)"})
+      _describe command commands ;;
+    argument)
+      candidates=(${(f)"$(wm --candidates $words[1] $((CURRENT - 1)) 2>/dev/null)"})
+      _describe -V argument candidates ;;
+  esac
 }
 compdef _wm wm
 EOF
@@ -105,6 +130,7 @@ esac
 case ${1:-} in
   ''|-h|--help) usage; exit 0 ;;
   --commands) list_commands; exit 0 ;;
+  --candidates) list_candidates "${2:-}" "${3:-0}"; exit 0 ;;
   --completion) completion "${2:-}"; exit 0 ;;
 esac
 

@@ -19,7 +19,7 @@ ln -s "$PWD/wm" ~/.local/bin/wm
 
 ### Shell completion
 
-Completes command names (with descriptions in zsh) and flags. New prompts are picked up without reloading the shell.
+Completes command names (with descriptions in zsh), flags, and arguments named `PR` or `ISSUE` with open pull requests or issues of the current repo (via `gh`, with titles in zsh). New prompts are picked up without reloading the shell.
 
 ```sh
 # ~/.bashrc
@@ -42,7 +42,7 @@ workmux: fix-{{ISSUE}}
 Fix GitHub issue #{{ISSUE}}. ...
 ```
 
-- `args` — space-separated positional argument names. Each is available as `{{NAME}}`.
+- `args` — space-separated positional argument names. Each is available as `{{NAME}}`. Name an argument `PR` or `ISSUE` to get completion of open PRs or issues.
 - `workmux` — arguments passed to `workmux add` before the prompt (split on whitespace).
 - `description` — shown in `wm --help`.
 
