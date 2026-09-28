@@ -42,6 +42,7 @@ body() {
 
 usage() {
   echo "Usage: wm [-n|--dry-run] <command> <args...> [-- <extra workmux add options>]"
+  echo "       wm --completion bash|zsh"
   echo
   echo "Commands:"
   local file name
@@ -52,6 +53,50 @@ usage() {
   done
 }
 
+# Prints "name:description" per command; used by shell completions.
+list_commands() {
+  local file
+  for file in "$PROMPTS_DIR"/*.md; do
+    [ -e "$file" ] || continue
+    printf '%s:%s\n' "$(basename "$file" .md)" "$(meta "$file" description)"
+  done
+}
+
+completion() {
+  case ${1:-} in
+    bash) cat <<'EOF'
+_wm() {
+  local cur=${COMP_WORDS[COMP_CWORD]} pos=1
+  case ${COMP_WORDS[1]} in -n|--dry-run) pos=2 ;; esac
+  [ "$COMP_CWORD" -eq "$pos" ] || return
+  local words
+  case $cur in
+    -*) words="-n --dry-run -h --help --completion" ;;
+    *) words=$(wm --commands 2>/dev/null | cut -d: -f1) ;;
+  esac
+  COMPREPLY=($(compgen -W "$words" -- "$cur"))
+}
+complete -F _wm wm
+EOF
+    ;;
+    zsh) cat <<'EOF'
+_wm() {
+  local -a commands
+  commands=(${(f)"$(wm --commands 2>/dev/null)"})
+  _arguments \
+    '(-n --dry-run)'{-n,--dry-run}'[print the command instead of running it]' \
+    '(- *)'{-h,--help}'[list commands]' \
+    '(- *)--completion[print shell completion script]:shell:(bash zsh)' \
+    '1:command:{_describe command commands}' \
+    '*:: : '
+}
+compdef _wm wm
+EOF
+    ;;
+    *) die "usage: wm --completion bash|zsh" ;;
+  esac
+}
+
 dry_run=
 case ${1:-} in
   -n|--dry-run) dry_run=1; shift ;;
@@ -59,6 +104,8 @@ esac
 
 case ${1:-} in
   ''|-h|--help) usage; exit 0 ;;
+  --commands) list_commands; exit 0 ;;
+  --completion) completion "${2:-}"; exit 0 ;;
 esac
 
 command=$1; shift

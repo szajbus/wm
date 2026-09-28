@@ -17,6 +17,18 @@ Symlink the script somewhere on your `PATH`:
 ln -s "$PWD/wm" ~/.local/bin/wm
 ```
 
+### Shell completion
+
+Completes command names (with descriptions in zsh) and flags. New prompts are picked up without reloading the shell.
+
+```sh
+# ~/.bashrc
+eval "$(wm --completion bash)"
+
+# ~/.zshrc (after compinit)
+eval "$(wm --completion zsh)"
+```
+
 ## Adding a command
 
 Each file in `prompts/` is a command named after the file. `prompts/fix.md` becomes `wm fix`:
