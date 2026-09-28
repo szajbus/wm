@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+# wm — run `workmux add` with a templated prompt from prompts/<command>.md
+#
+# Usage: wm [-n|--dry-run] <command> <args...> [-- <extra workmux add options>]
+#
+# Kept compatible with macOS's stock bash 3.2.
+
+set -euo pipefail
+
+resolve_self() {
+  local path=$0
+  while [ -L "$path" ]; do
+    local dir
+    dir=$(cd "$(dirname "$path")" && pwd)
+    path=$(readlink "$path")
+    case $path in /*) ;; *) path=$dir/$path ;; esac
+  done
+  cd "$(dirname "$path")" && pwd
+}
+
+PROMPTS_DIR=${WM_PROMPTS_DIR:-$(resolve_self)/prompts}
+
+die() { echo "wm: $*" >&2; exit 1; }
+
+# Prints the value of a frontmatter key from a prompt file.
+meta() {
+  awk -v key="$2" '
+    NR == 1 && $0 == "---" { in_fm = 1; next }
+    in_fm && $0 == "---" { exit }
+    in_fm && index($0, key ":") == 1 { sub(/^[^:]*:[ \t]*/, ""); print; exit }
+  ' "$1"
+}
+
+# Prints everything after the frontmatter.
+body() {
+  awk '
+    NR == 1 && $0 == "---" { in_fm = 1; next }
+    in_fm && $0 == "---" { in_fm = 0; next }
+    !in_fm { print }
+  ' "$1"
+}
+
+usage() {
+  echo "Usage: wm [-n|--dry-run] <command> <args...> [-- <extra workmux add options>]"
+  echo
+  echo "Commands:"
+  local file name
+  for file in "$PROMPTS_DIR"/*.md; do
+    [ -e "$file" ] || continue
+    name=$(basename "$file" .md)
+    printf "  %-24s %s\n" "$name $(meta "$file" args)" "$(meta "$file" description)"
+  done
+}
+
+dry_run=
+case ${1:-} in
+  -n|--dry-run) dry_run=1; shift ;;
+esac
+
+case ${1:-} in
+  ''|-h|--help) usage; exit 0 ;;
+esac
+
+command=$1; shift
+file=$PROMPTS_DIR/$command.md
+[ -f "$file" ] || die "unknown command '$command' (see 'wm --help')"
+
+read -r -a arg_names <<< "$(meta "$file" args)"
+[ $# -ge ${#arg_names[@]} ] || die "usage: wm $command ${arg_names[*]:-}"
+
+workmux_args=$(meta "$file" workmux)
+prompt=$(body "$file")
+
+for name in ${arg_names[@]+"${arg_names[@]}"}; do
+  value=$1; shift
+  workmux_args=${workmux_args//\{\{$name\}\}/$value}
+  prompt=${prompt//\{\{$name\}\}/$value}
+done
+
+if [ "${1:-}" = "--" ]; then
+  shift
+elif [ $# -gt 0 ]; then
+  die "unexpected argument '$1' (pass extra workmux options after --)"
+fi
+
+leftover=$(printf '%s\n%s' "$workmux_args" "$prompt" | grep -o '{{[^}]*}}' | head -1 || true)
+[ -z "$leftover" ] || die "$file: unknown placeholder $leftover (declare it in 'args:')"
+
+read -r -a add_args <<< "$workmux_args"
+cmd=(workmux add ${add_args[@]+"${add_args[@]}"} "$@" -p "$prompt")
+
+if [ -n "$dry_run" ]; then
+  printf '%q ' "${cmd[@]:0:${#cmd[@]}-1}"
+  printf '\n\n%s\n' "$prompt"
+else
+  exec "${cmd[@]}"
+fi
