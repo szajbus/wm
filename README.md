@@ -6,6 +6,7 @@ A thin wrapper around [workmux](https://github.com/raine/workmux) that starts a 
 wm review 123          # workmux add pr-123 --pr 123 -p "<prompts/review.md>"
 wm review 123 -- -b    # extra options after -- go straight to `workmux add`
 wm -n review 123       # dry run: print the command and rendered prompt
+wm -e review 123       # open the prompt in $EDITOR before submitting
 wm --help              # list available commands
 ```
 

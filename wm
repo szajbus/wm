@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # wm — run `workmux add` with a templated prompt from prompts/<command>.md
 #
-# Usage: wm [-n|--dry-run] <command> <args...> [-- <extra workmux add options>]
+# Usage: wm [-n|--dry-run] [-e|--edit] <command> <args...> [-- <extra workmux add options>]
 #
 # Kept compatible with macOS's stock bash 3.2.
 
@@ -41,7 +41,7 @@ body() {
 }
 
 usage() {
-  echo "Usage: wm [-n|--dry-run] <command> <args...> [-- <extra workmux add options>]"
+  echo "Usage: wm [-n|--dry-run] [-e|--edit] <command> <args...> [-- <extra workmux add options>]"
   echo "       wm --completion bash|zsh"
   echo
   echo "Commands:"
@@ -81,11 +81,13 @@ completion() {
     bash) cat <<'EOF'
 _wm() {
   local cur=${COMP_WORDS[COMP_CWORD]} pos=1
-  case ${COMP_WORDS[1]} in -n|--dry-run) pos=2 ;; esac
+  while [ "$pos" -lt "$COMP_CWORD" ]; do
+    case ${COMP_WORDS[pos]} in -n|--dry-run|-e|--edit) pos=$((pos + 1)) ;; *) break ;; esac
+  done
   local words
   if [ "$COMP_CWORD" -eq "$pos" ]; then
     case $cur in
-      -*) words="-n --dry-run -h --help --completion" ;;
+      -*) words="-n --dry-run -e --edit -h --help --completion" ;;
       *) words=$(wm --commands 2>/dev/null | cut -d: -f1) ;;
     esac
   elif [ "$COMP_CWORD" -gt "$pos" ]; then
@@ -102,6 +104,7 @@ _wm() {
   local state
   _arguments \
     '(-n --dry-run)'{-n,--dry-run}'[print the command instead of running it]' \
+    '(-e --edit)'{-e,--edit}'[edit the prompt in $EDITOR before submitting]' \
     '(- *)'{-h,--help}'[list commands]' \
     '(- *)--completion[print shell completion script]:shell:(bash zsh)' \
     '1:command:->command' \
@@ -123,9 +126,14 @@ EOF
 }
 
 dry_run=
-case ${1:-} in
-  -n|--dry-run) dry_run=1; shift ;;
-esac
+edit=
+while :; do
+  case ${1:-} in
+    -n|--dry-run) dry_run=1; shift ;;
+    -e|--edit) edit=1; shift ;;
+    *) break ;;
+  esac
+done
 
 case ${1:-} in
   ''|-h|--help) usage; exit 0 ;;
@@ -159,6 +167,15 @@ fi
 leftover=$(printf '%s\n%s' "$workmux_args" "$prompt" | grep -o '{{[^}]*}}' | head -1 || true)
 [ -z "$leftover" ] || die "$file: unknown placeholder $leftover (declare it in 'args:')"
 
+if [ -n "$edit" ]; then
+  tmp=$(mktemp "${TMPDIR:-/tmp}/wm-prompt.XXXXXX")
+  trap 'rm -f "$tmp"' EXIT
+  printf '%s\n' "$prompt" > "$tmp"
+  ${EDITOR:-vi} "$tmp" || die "editor exited with an error"
+  prompt=$(cat "$tmp")
+  [ -n "${prompt//[[:space:]]/}" ] || die "empty prompt, aborting"
+fi
+
 read -r -a add_args <<< "$workmux_args"
 cmd=(workmux add ${add_args[@]+"${add_args[@]}"} "$@" -p "$prompt")
 
@@ -166,5 +183,6 @@ if [ -n "$dry_run" ]; then
   printf '%q ' "${cmd[@]:0:${#cmd[@]}-1}"
   printf '\n\n%s\n' "$prompt"
 else
+  [ -z "$edit" ] || rm -f "$tmp"
   exec "${cmd[@]}"
 fi
